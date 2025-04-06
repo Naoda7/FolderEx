@@ -285,7 +285,7 @@ const FolderStructure = ({
             ) : (
               <span className="w-5 mr-1"></span>
             )}
-            <FiFolder className="mr-1.5 text-teal-600 flex-shrink-0" />
+            <FiFolder className="mr-1.5 text-rose-600 flex-shrink-0" />
             <span className="font-medium truncate">{node.name}/</span>
           </div>
           {hasChildren && isExpanded && (
@@ -334,9 +334,9 @@ const FolderStructure = ({
               null
             )}
             {isFolder ? (
-              <FiFolder className="mr-1.5 text-teal-600 flex-shrink-0" />
+              <FiFolder className="mr-1.5 text-rose-600 flex-shrink-0" />
             ) : (
-              <FiFile className="mr-1.5 text-teal-500 flex-shrink-0" />
+              <FiFile className="mr-1.5 text-rose-500 flex-shrink-0" />
             )}
             <span className={`${isFolder ? 'font-medium' : ''} truncate`}>
               {node.name}
@@ -368,24 +368,24 @@ const FolderStructure = ({
       onDrop={handleDrop}
       className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${
         isLoading 
-          ? 'border-teal-400 bg-teal-50' 
+          ? 'border-rose-400 bg-gray-50/60' 
           : error 
             ? 'border-red-400 bg-red-50' 
-            : 'border-gray-300 bg-gray-50 hover:border-teal-400 cursor-pointer'
+            : 'border-gray-300 bg-gray-50/60 hover:border-rose-400 cursor-pointer'
       }`}
     >
       <div className="flex flex-col items-center justify-center space-y-3">
         {isLoading ? (
           <>
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-500"></div>
-            <p className="text-teal-600 font-medium">Processing files...</p>
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-rose-500"></div>
+            <p className="text-rose-600 font-medium">Processing files...</p>
           </>
         ) : (
           <>
             <FiUpload className={`w-10 h-10 transition-colors ${
               error 
                 ? 'text-red-400' 
-                : 'text-gray-400 group-hover:text-teal-400'
+                : 'text-gray-400 group-hover:text-rose-400'
             }`} />
             <div>
               <p className="text-lg font-medium text-gray-700">
@@ -393,6 +393,9 @@ const FolderStructure = ({
               </p>
               <p className="text-sm text-gray-500 mt-1">
                 Supported formats: folder, .zip (max {MAX_FILE_SIZE_MB}MB)
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                The files you upload are not saved
               </p>
             </div>
           </>
@@ -413,7 +416,7 @@ const FolderStructure = ({
       {structure && !isLoading && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="font-semibold text-gray-700">Folder Structure: <span className="text-teal-600">{structure.name}</span></h3>
+            <h3 className="font-semibold text-gray-700">Folder Structure: <span className="text-rose-600">{structure.name}</span></h3>
             <div className="flex gap-2">
               <button 
                 onClick={toggleExpandAll}
@@ -440,7 +443,7 @@ const FolderStructure = ({
               </button>
             </div>
           </div>
-          <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto">
+          <div className="bg-gray-50/60 rounded-lg border border-gray-100 overflow-x-auto">
             <div 
               className="p-4 overflow-y-auto"
               style={{ maxHeight: typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight }}

@@ -51,7 +51,7 @@ function App() {
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-start py-10 px-4 w-full bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+    <div className="flex-1 flex flex-col items-center justify-start py-8 px-4 w-full bg-white min-h-screen">
       <div className="w-full max-w-4xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Folder Structure Viewer</h1>
@@ -68,8 +68,8 @@ function App() {
             onClick={() => setViewMode('text')}
             className={`px-4 py-2 rounded-l-lg transition-colors ${
               viewMode === 'text' 
-                ? 'bg-teal-600 text-white' 
-                : 'bg-gray-200 hover:bg-gray-300'
+                ? 'bg-rose-600 text-white' 
+                : 'bg-gray-200/60 hover:bg-gray-300/60'
             }`}
           >
             Text View
@@ -78,8 +78,8 @@ function App() {
             onClick={() => setViewMode('folder')}
             className={`px-4 py-2 rounded-r-lg transition-colors ${
               viewMode === 'folder' 
-                ? 'bg-teal-600 text-white' 
-                : 'bg-gray-200 hover:bg-gray-300'
+                ? 'bg-rose-600 text-white' 
+                : 'bg-gray-200/60 hover:bg-gray-300/60'
             }`}
           >
             Folder View
@@ -87,7 +87,7 @@ function App() {
         </div>
 
         {/* Main content area */}
-        <div className="bg-white rounded-xl shadow-md overflow-hidden w-full transition-all duration-200">
+        <div className="bg-white rounded-xl shadow-md shadow-gray-200/40 border-2 border-gray-400/10 overflow-hidden w-full transition-all duration-200">
           {viewMode === 'text' ? (
             <TextFolderStructure 
               structure={structure}
@@ -120,7 +120,7 @@ function App() {
         {isLoading && (
           <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-xl text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 mx-auto mb-4"></div>
               <p className="text-lg font-medium text-gray-800">
                 {viewMode === 'text' 
                   ? 'Processing folder structure...' 

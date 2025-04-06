@@ -248,24 +248,24 @@ const TextFolderStructure = ({
       onDrop={handleDrop}
       className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${
         isLoading 
-          ? 'border-teal-400 bg-teal-50' 
+          ? 'border-rose-400 bg-gray-50/60' 
           : displayError
             ? 'border-red-400 bg-red-50' 
-            : 'border-gray-300 bg-gray-50 hover:border-teal-400 cursor-pointer'
+            : 'border-gray-300 bg-gray-50/60 hover:border-rose-400 cursor-pointer'
       }`}
     >
       <div className="flex flex-col items-center justify-center space-y-3">
         {isLoading ? (
           <>
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-500"></div>
-            <p className="text-teal-600 font-medium">Processing files...</p>
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-rose-500"></div>
+            <p className="text-rose-600 font-medium">Processing files...</p>
           </>
         ) : (
           <>
             <FiUpload className={`w-10 h-10 transition-colors ${
               displayError 
                 ? 'text-red-400' 
-                : 'text-gray-400 group-hover:text-teal-400'
+                : 'text-gray-400 group-hover:text-rose-400'
             }`} />
             <div>
               <p className="text-lg font-medium text-gray-700">
@@ -273,6 +273,9 @@ const TextFolderStructure = ({
               </p>
               <p className="text-sm text-gray-500 mt-1">
                 Supported formats: folder, .zip (max {MAX_FILE_SIZE_MB}MB)
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                The files you upload are not saved
               </p>
             </div>
           </>
@@ -296,7 +299,7 @@ const TextFolderStructure = ({
         <div className="space-y-4">
           <div className="flex flex-wrap justify-between items-center gap-2">
             <h3 className="font-semibold text-gray-700">
-              Folder Structure:  <span className="text-teal-600">{structure.name}</span>
+              Folder Structure:  <span className="text-rose-600">{structure.name}</span>
             </h3>
             <div className="flex gap-2">
               <button 
@@ -318,10 +321,10 @@ const TextFolderStructure = ({
             </div>
           </div>
           
-          <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-gray-50/60 rounded-lg border border-gray-100 overflow-hidden">
             {/* Added maxHeight with scroll */}
             <div 
-              className="p-4 overflow-x-auto overflow-y-auto font-mono text-sm bg-white"
+              className="p-4 overflow-x-auto overflow-y-auto font-mono text-sm bg-gray-50/60"
               style={{ 
                 maxHeight: typeof maxHeight === 'number' 
                   ? `${maxHeight}px` 
