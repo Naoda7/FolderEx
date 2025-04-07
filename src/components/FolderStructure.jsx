@@ -18,7 +18,9 @@ import {
   FiVideo,
   FiFileMinus,
   FiDownload,
-  FiX
+  FiX,
+  FiEye,
+  FiEyeOff
 } from 'react-icons/fi';
 
 const PreviewFile = ({ file, onClose }) => {
@@ -174,6 +176,7 @@ const FolderStructure = ({
   const [copied, setCopied] = useState(false);
   const [currentError, setCurrentError] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
+  const [isFullMode, setIsFullMode] = useState(false);
   const MAX_FILE_SIZE_MB = 50;
 
   const areAllFoldersExpanded = useCallback(() => {
@@ -189,12 +192,10 @@ const FolderStructure = ({
 
   const itemCount = structure ? countItems(structure) : 0;
 
-  // File type icons with colors (no background colors)
   const getFileIconComponent = (fileName) => {
     const extension = fileName.split('.').pop().toLowerCase();
     
     const iconMap = {
-      // Documents
       txt: <FiFileText className="text-blue-500" />,
       pdf: <FiFileText className="text-red-500" />,
       doc: <FiFileText className="text-blue-600" />,
@@ -203,16 +204,12 @@ const FolderStructure = ({
       csv: <FiFileText className="text-green-600" />,
       xls: <FiFileText className="text-green-600" />,
       xlsx: <FiFileText className="text-green-600" />,
-      
-      // Images
       jpg: <FiImage className="text-yellow-500" />,
       jpeg: <FiImage className="text-yellow-500" />,
       png: <FiImage className="text-blue-400" />,
       gif: <FiImage className="text-purple-400" />,
       svg: <FiImage className="text-orange-400" />,
       webp: <FiImage className="text-green-400" />,
-      
-      // Code
       js: <FiCode className="text-yellow-400" />,
       jsx: <FiCode className="text-blue-300" />,
       ts: <FiCode className="text-blue-500" />,
@@ -221,19 +218,13 @@ const FolderStructure = ({
       json: <FiCode className="text-gray-500" />,
       py: <FiCode className="text-blue-400" />,
       java: <FiCode className="text-red-400" />,
-      
-      // Media
       mp3: <FiMusic className="text-purple-500" />,
       wav: <FiMusic className="text-blue-400" />,
       mp4: <FiVideo className="text-red-400" />,
       mov: <FiVideo className="text-blue-500" />,
-      
-      // Archives
       zip: <FiFile className="text-yellow-600" />,
       rar: <FiFile className="text-red-500" />,
       '7z': <FiFile className="text-green-500" />,
-      
-      // Default
       default: <FiFile className="text-gray-400" />
     };
 
@@ -657,6 +648,72 @@ const FolderStructure = ({
     );
   };
 
+  const renderContent = (isFullScreen = false) => (
+    <div className={`space-y-4 ${isFullScreen ? 'h-full' : ''}`}>
+      <div className="flex justify-between items-center">
+        <h3 className="font-semibold text-gray-700">
+          Folder Structure: <span className="text-rose-600">{structure.name}</span>
+        </h3>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setIsFullMode(!isFullScreen)}
+            className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+          >
+            {isFullScreen ? (
+              <FiMinimize2 title='Exit Full Screen' size={14} />
+            ) : (
+              <FiMaximize2 title='Full Screen' size={14} />
+            )}
+          </button>
+          <button 
+            onClick={toggleExpandAll}
+            className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+          >
+            {areAllFoldersExpanded() ? (
+              <FiEyeOff className="mr-1.5" size={14} />
+            ) : (
+              <FiEye className="mr-1.5" size={14} />
+            )}
+            {areAllFoldersExpanded() ? 'Collapse All' : 'Expand All'}
+          </button>
+          <button 
+            onClick={copyVisualStructure}
+            className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+          >
+            <FiCopy className="mr-1.5" size={14} />
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+          <button 
+            onClick={downloadAsTextFile}
+            className="flex items-center text-sm px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md transition-colors"
+          >
+            <FiDownload className="mr-1.5" size={14} />
+            Download
+          </button>
+        </div>
+      </div>
+      
+      <div className={`bg-gray-50/60 rounded-lg border border-gray-100 overflow-hidden ${
+        isFullScreen ? 'flex-1 flex flex-col' : ''
+      }`}>
+        <div 
+          className={`p-4 overflow-x-auto overflow-y-auto font-mono text-sm bg-gray-50/60 ${
+            isFullScreen ? 'flex-1' : ''
+          }`}
+          style={{ 
+            maxHeight: isFullScreen ? 'none' : (typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight)
+          }}
+        >
+          {renderStructure(structure)}
+        </div>
+        <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 border-t border-gray-200 flex justify-between">
+          <span>{itemCount} items</span>
+          <span>{new Date().toLocaleString()}</span>
+        </div>
+      </div>
+    </div>
+  );
+
   const displayError = error || currentError;
 
   return (
@@ -712,62 +769,21 @@ const FolderStructure = ({
       )}
 
       {structure && !isLoading && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap justify-between items-center gap-2">
-            <h3 className="font-semibold text-gray-700">
-              Folder Structure: <span className="text-rose-600">{structure.name}</span>
-            </h3>
-            <div className="flex gap-2">
-              <button 
-                onClick={toggleExpandAll}
-                className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-              >
-                {areAllFoldersExpanded() ? (
-                  <>
-                    <FiMinimize2 className="mr-1.5" size={14} />
-                    Collapse All
-                  </>
-                ) : (
-                  <>
-                    <FiMaximize2 className="mr-1.5" size={14} />
-                    Expand All
-                  </>
-                )}
-              </button>
-              <button 
-                onClick={copyVisualStructure}
-                className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-              >
-                <FiCopy className="mr-1.5" size={14} />
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-              <button 
-                onClick={downloadAsTextFile}
-                className="flex items-center text-sm px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md transition-colors"
-                title='Download as TXT'>
-                <FiDownload className="mr-1.5" size={14} />
-                Download
-              </button>
-            </div>
+        <>
+          {/* Normal Mode */}
+          <div className={isFullMode ? 'hidden' : ''}>
+            {renderContent(false)}
           </div>
-          
-          <div className="bg-gray-50/60 rounded-lg border border-gray-100 overflow-hidden">
-            <div 
-              className="p-4 overflow-x-auto overflow-y-auto"
-              style={{ 
-                maxHeight: typeof maxHeight === 'number' 
-                  ? `${maxHeight}px` 
-                  : maxHeight 
-              }}
-            >
-              {renderStructure(structure)}
+
+          {/* Full Screen Mode */}
+          {isFullMode && (
+            <div className="fixed inset-0 bg-white z-50 p-6 overflow-auto">
+              <div className="max-w-6xl mx-auto h-full flex flex-col">
+                {renderContent(true)}
+              </div>
             </div>
-            <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 border-t border-gray-200 flex justify-between">
-              <span>{itemCount} items</span>
-              <span>{new Date().toLocaleString()}</span>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
 
       {previewFile && (

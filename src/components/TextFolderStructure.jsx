@@ -5,7 +5,10 @@ import {
   FiCopy, 
   FiDownload, 
   FiAlertCircle,
-  FiUpload
+  FiUpload,
+  FiMaximize2,
+  FiX,
+  FiMinimize2
 } from 'react-icons/fi';
 
 const TextFolderStructure = ({ 
@@ -18,6 +21,7 @@ const TextFolderStructure = ({
 }) => {
   const [currentError, setCurrentError] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [isFullMode, setIsFullMode] = useState(false);
   const MAX_FILE_SIZE_MB = 50;
 
   const getSafeFilename = (name) => {
@@ -77,7 +81,7 @@ const TextFolderStructure = ({
         type: 'directory',
         path: '',
         children: [],
-        fileMap: new Map() // Add fileMap to store zip entries
+        fileMap: new Map()
       };
 
       Object.keys(content.files).forEach(relativePath => {
@@ -110,7 +114,7 @@ const TextFolderStructure = ({
               zipEntry: zipEntry
             };
             current.children.push(fileNode);
-            root.fileMap.set(fileNode.path, zipEntry); // Store in fileMap
+            root.fileMap.set(fileNode.path, zipEntry);
           }
         });
       });
@@ -238,8 +242,73 @@ const TextFolderStructure = ({
   const displayError = error || currentError;
   const itemCount = structure ? countItems(structure) : 0;
 
+  // Konten utama yang akan digunakan di normal mode dan full mode
+  const renderContent = (isFullScreen = false) => (
+    <div className={`space-y-4 ${isFullScreen ? 'h-full' : ''}`}>
+      <div className="flex justify-between items-center">
+        <h3 className="font-semibold text-gray-700">
+          Folder Structure: <span className="text-rose-600">{structure.name}</span>
+        </h3>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setIsFullMode(!isFullScreen)}
+            className={`flex items-center text-sm px-3 py-1.5 rounded-md transition-colors ${
+              isFullScreen 
+                ? 'bg-gray-100 hover:bg-gray-200' 
+                : 'bg-gray-100 hover:bg-gray-200'
+            }`}
+          >
+            {isFullScreen ? (
+              <FiMinimize2 title='Exit Full Screen' size={14} />
+            ) : (
+              <FiMaximize2 title='Full Screen' size={14} />
+            )}
+            {isFullScreen ? '' : ''}
+          </button>
+          <button 
+            onClick={copyToClipboard}
+            className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            title="Copy to clipboard"
+          >
+            <FiCopy className="mr-1.5" size={14} />
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+          <button 
+            onClick={downloadAsTextFile}
+            className="flex items-center text-sm px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md transition-colors"
+            title="Download as TXT"
+          >
+            <FiDownload className="mr-1.5" size={14} />
+            Download
+          </button>
+        </div>
+      </div>
+      
+      <div className={`bg-gray-50/60 rounded-lg border border-gray-100 overflow-hidden ${
+        isFullScreen ? 'flex-1 flex flex-col' : ''
+      }`}>
+        <div 
+          className={`p-4 overflow-x-auto overflow-y-auto font-mono text-sm bg-gray-50/60 ${
+            isFullScreen ? 'flex-1' : ''
+          }`}
+          style={{ 
+            maxHeight: isFullScreen ? 'none' : (typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight)
+          }}
+        >
+          <pre className="whitespace-pre">
+            {renderStructure(structure).join('\n')}
+          </pre>
+        </div>
+        <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 border-t border-gray-200 flex justify-between">
+          <span>{itemCount} items</span>
+          <span>{new Date().toLocaleString()}</span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="p-4 md:p-6 group">
+    <div className="p-4 md:p-6 group relative">
       <div
         onDragOver={handleDragOver}
         onDrop={handleDrop}
@@ -291,50 +360,21 @@ const TextFolderStructure = ({
       )}
 
       {structure && !isLoading && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap justify-between items-center gap-2">
-            <h3 className="font-semibold text-gray-700">
-              Folder Structure: <span className="text-rose-600">{structure.name}</span>
-            </h3>
-            <div className="flex gap-2">
-              <button 
-                onClick={copyToClipboard}
-                className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                title="Copy to clipboard"
-              >
-                <FiCopy className="mr-1.5" size={14} />
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-              <button 
-                onClick={downloadAsTextFile}
-                className="flex items-center text-sm px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md transition-colors"
-                title="Download as TXT"
-              >
-                <FiDownload className="mr-1.5" size={14} />
-                Download
-              </button>
-            </div>
+        <>
+          {/* Normal Mode */}
+          <div className={isFullMode ? 'hidden' : ''}>
+            {renderContent(false)}
           </div>
-          
-          <div className="bg-gray-50/60 rounded-lg border border-gray-100 overflow-hidden">
-            <div 
-              className="p-4 overflow-x-auto overflow-y-auto font-mono text-sm bg-gray-50/60"
-              style={{ 
-                maxHeight: typeof maxHeight === 'number' 
-                  ? `${maxHeight}px` 
-                  : maxHeight 
-              }}
-            >
-              <pre className="whitespace-pre">
-                {renderStructure(structure).join('\n')}
-              </pre>
+
+          {/* Full Screen Mode */}
+          {isFullMode && (
+            <div className="fixed inset-0 bg-white z-50 p-6 overflow-auto">
+              <div className="max-w-6xl mx-auto h-full flex flex-col">
+                {renderContent(true)}
+              </div>
             </div>
-            <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 border-t border-gray-200 flex justify-between">
-              <span>{itemCount} items</span>
-              <span>{new Date().toLocaleString()}</span>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );
