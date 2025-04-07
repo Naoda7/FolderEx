@@ -12,14 +12,14 @@ const TextFolderStructure = ({
   structure, 
   error, 
   onStructureUpdate,
+  isLoading,
+  setIsLoading,
   maxHeight = '35vh'
 }) => {
-  const [isLoading, setIsLoading] = useState(false);
   const [currentError, setCurrentError] = useState(null);
   const [copied, setCopied] = useState(false);
   const MAX_FILE_SIZE_MB = 50;
 
-  // Generate safe filename for download
   const getSafeFilename = (name) => {
     if (!name) return 'folder-structure.txt';
     const cleanName = name
@@ -29,7 +29,6 @@ const TextFolderStructure = ({
     return cleanName ? `${cleanName}-structure.txt` : 'folder-structure.txt';
   };
 
-  // Copy structure to clipboard
   const copyToClipboard = () => {
     if (!structure) return;
     
@@ -44,7 +43,6 @@ const TextFolderStructure = ({
       });
   };
 
-  // Download structure as text file
   const downloadAsTextFile = () => {
     if (!structure) return;
     
@@ -60,14 +58,12 @@ const TextFolderStructure = ({
     URL.revokeObjectURL(url);
   };
 
-  // Handle drag over event
   const handleDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
   };
 
-  // Extract structure from ZIP file
   const extractZipStructure = async (file) => {
     try {
       if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
@@ -80,7 +76,8 @@ const TextFolderStructure = ({
         name: file.name.replace(/\.zip$/i, ''),
         type: 'directory',
         path: '',
-        children: []
+        children: [],
+        fileMap: new Map() // Add fileMap to store zip entries
       };
 
       Object.keys(content.files).forEach(relativePath => {
@@ -106,11 +103,14 @@ const TextFolderStructure = ({
               current = existing;
             }
           } else if (!existing) {
-            current.children.push({
+            const fileNode = {
               name: part,
               type: 'file',
-              path: `${current.path}/${part}`
-            });
+              path: `${current.path}/${part}`,
+              zipEntry: zipEntry
+            };
+            current.children.push(fileNode);
+            root.fileMap.set(fileNode.path, zipEntry); // Store in fileMap
           }
         });
       });
@@ -130,7 +130,6 @@ const TextFolderStructure = ({
     }
   };
 
-  // Read directory structure from FileSystemEntry
   const readDirectoryStructure = async (entry, currentPath = '') => {
     const reader = entry.createReader();
     const path = currentPath ? `${currentPath}/${entry.name}` : entry.name;
@@ -153,7 +152,8 @@ const TextFolderStructure = ({
         dirStructure.children.push({
           name: item.name,
           type: 'file',
-          path: `${path}/${item.name}`
+          path: `${path}/${item.name}`,
+          fileEntry: item
         });
       }
     }
@@ -166,7 +166,6 @@ const TextFolderStructure = ({
     return dirStructure;
   };
 
-  // Handle file/folder drop
   const handleDrop = async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -207,7 +206,6 @@ const TextFolderStructure = ({
     }
   };
 
-  // Render structure as text with proper indentation
   const renderStructure = (node, prefix = '', isLast = true, isRoot = true) => {
     if (isRoot) {
       const rootLine = `${node.name}/`;
@@ -232,7 +230,6 @@ const TextFolderStructure = ({
     return [line, ...childLines];
   };
 
-  // Count total items in structure
   const countItems = useCallback((node) => {
     if (!node.children) return 1;
     return 1 + node.children.reduce((sum, child) => sum + countItems(child), 0);
@@ -242,48 +239,47 @@ const TextFolderStructure = ({
   const itemCount = structure ? countItems(structure) : 0;
 
   return (
-  <div className="p-4 md:p-6 group">
-    <div
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-      className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${
-        isLoading 
-          ? 'border-rose-400 bg-gray-50/60' 
-          : displayError
-            ? 'border-red-400 bg-red-50' 
-            : 'border-gray-300 bg-gray-50/60 hover:border-rose-400 cursor-pointer'
-      }`}
-    >
-      <div className="flex flex-col items-center justify-center space-y-3">
-        {isLoading ? (
-          <>
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-rose-500"></div>
-            <p className="text-rose-600 font-medium">Processing files...</p>
-          </>
-        ) : (
-          <>
-            <FiUpload className={`w-10 h-10 transition-colors ${
-              displayError 
-                ? 'text-red-400' 
-                : 'text-gray-400 group-hover:text-rose-400'
-            }`} />
-            <div>
-              <p className="text-lg font-medium text-gray-700">
-                Drag and drop a folder or ZIP file
-              </p>
-              <p className="text-sm text-gray-500 mt-1">
-                Supported formats: folder, .zip (max {MAX_FILE_SIZE_MB}MB)
-              </p>
-              <p className="text-sm text-gray-500 mt-1">
-                The files you upload are not saved
-              </p>
-            </div>
-          </>
-        )}
+    <div className="p-4 md:p-6 group">
+      <div
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${
+          isLoading 
+            ? 'border-rose-400 bg-gray-50/60' 
+            : displayError
+              ? 'border-red-400 bg-red-50' 
+              : 'border-gray-300 bg-gray-50/60 hover:border-rose-400 cursor-pointer'
+        }`}
+      >
+        <div className="flex flex-col items-center justify-center space-y-3">
+          {isLoading ? (
+            <>
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-rose-500"></div>
+              <p className="text-rose-600 font-medium">Processing files...</p>
+            </>
+          ) : (
+            <>
+              <FiUpload className={`w-10 h-10 transition-colors ${
+                displayError 
+                  ? 'text-red-400' 
+                  : 'text-gray-400 group-hover:text-rose-400'
+              }`} />
+              <div>
+                <p className="text-lg font-medium text-gray-700">
+                  Drag and drop a folder or ZIP file
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  Supported formats: folder, .zip (max {MAX_FILE_SIZE_MB}MB)
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  The files you upload are not saved
+                </p>
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
 
-      {/* Error Display */}
       {displayError && (
         <div className="bg-red-50 border-l-4 border-red-400 text-red-700 p-4 rounded mb-6 flex items-start">
           <FiAlertCircle className="flex-shrink-0 mr-2 mt-0.5" />
@@ -294,22 +290,13 @@ const TextFolderStructure = ({
         </div>
       )}
 
-      {/* Structure Display */}
       {structure && !isLoading && (
         <div className="space-y-4">
           <div className="flex flex-wrap justify-between items-center gap-2">
             <h3 className="font-semibold text-gray-700">
-              Folder Structure:  <span className="text-rose-600">{structure.name}</span>
+              Folder Structure: <span className="text-rose-600">{structure.name}</span>
             </h3>
             <div className="flex gap-2">
-              <button 
-                onClick={downloadAsTextFile}
-                className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                title="Download as text file"
-              >
-                <FiDownload className="mr-1.5" size={14} />
-                Download
-              </button>
               <button 
                 onClick={copyToClipboard}
                 className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
@@ -318,11 +305,18 @@ const TextFolderStructure = ({
                 <FiCopy className="mr-1.5" size={14} />
                 {copied ? 'Copied!' : 'Copy'}
               </button>
+              <button 
+                onClick={downloadAsTextFile}
+                className="flex items-center text-sm px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md transition-colors"
+                title="Download as TXT"
+              >
+                <FiDownload className="mr-1.5" size={14} />
+                Download
+              </button>
             </div>
           </div>
           
           <div className="bg-gray-50/60 rounded-lg border border-gray-100 overflow-hidden">
-            {/* Added maxHeight with scroll */}
             <div 
               className="p-4 overflow-x-auto overflow-y-auto font-mono text-sm bg-gray-50/60"
               style={{ 
@@ -346,24 +340,26 @@ const TextFolderStructure = ({
   );
 };
 
-
 TextFolderStructure.propTypes = {
-    structure: PropTypes.shape({
-      name: PropTypes.string,
-      type: PropTypes.string,
-      path: PropTypes.string,
-      children: PropTypes.array,
-    }),
-    error: PropTypes.string,
-    onStructureUpdate: PropTypes.func.isRequired,
-    maxHeight: PropTypes.oneOfType([
-      PropTypes.string, 
-      PropTypes.number  
-    ]),
-  };
-  
-  TextFolderStructure.defaultProps = {
-    maxHeight: '35vh' 
-  };
+  structure: PropTypes.shape({
+    name: PropTypes.string,
+    type: PropTypes.string,
+    path: PropTypes.string,
+    children: PropTypes.array,
+    fileMap: PropTypes.instanceOf(Map)
+  }),
+  error: PropTypes.string,
+  onStructureUpdate: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool.isRequired,
+  setIsLoading: PropTypes.func.isRequired,
+  maxHeight: PropTypes.oneOfType([
+    PropTypes.string, 
+    PropTypes.number  
+  ]),
+};
+
+TextFolderStructure.defaultProps = {
+  maxHeight: '35vh'
+};
 
 export default TextFolderStructure;

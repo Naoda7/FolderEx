@@ -8,7 +8,7 @@ function App() {
     return localStorage.getItem('folderViewMode') || 'text';
   });
 
-  // Structure and error states
+  // Shared state between both components
   const [structure, setStructure] = useState(null);
   const [error, setError] = useState(null);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
@@ -19,7 +19,7 @@ function App() {
     localStorage.setItem('folderViewMode', viewMode);
   }, [viewMode]);
 
-  // Reset view mode when window closes
+  // Reset view mode when window closes (optional)
   useEffect(() => {
     const handleBeforeUnload = () => {
       localStorage.setItem('folderViewMode', 'text');
@@ -28,7 +28,7 @@ function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
-  // Handle structure updates
+  // Shared structure update handler
   const handleStructureUpdate = (newStructure, errorMsg = null) => {
     setStructure(newStructure);
     setError(errorMsg);
@@ -40,13 +40,15 @@ function App() {
     }
   };
 
-  // Recursively get all folder paths
+  // Helper function to get all folder paths
   const getAllFolderPaths = (node) => {
     if (node.type !== 'directory') return [];
     let paths = [node.path];
-    node.children.forEach(child => {
-      paths = [...paths, ...getAllFolderPaths(child)];
-    });
+    if (node.children) {
+      node.children.forEach(child => {
+        paths = [...paths, ...getAllFolderPaths(child)];
+      });
+    }
     return paths;
   };
 
@@ -58,7 +60,7 @@ function App() {
           <p className="text-gray-600">
             {viewMode === 'text' 
               ? 'Text view of your folder structure' 
-              : 'Visual exploration of your folder hierarchy'}
+              : 'Visual folder navigation with file previews'}
           </p>
         </div>
 
@@ -94,16 +96,17 @@ function App() {
               error={error}
               onStructureUpdate={handleStructureUpdate}
               isLoading={isLoading}
+              setIsLoading={setIsLoading}
             />
           ) : (
             <FolderStructure 
               structure={structure}
               error={error}
-              onStructureUpdate={handleStructureUpdate}
               expandedFolders={expandedFolders}
               setExpandedFolders={setExpandedFolders}
               isLoading={isLoading}
               setIsLoading={setIsLoading}
+              onStructureUpdate={handleStructureUpdate}
             />
           )}
         </div>
