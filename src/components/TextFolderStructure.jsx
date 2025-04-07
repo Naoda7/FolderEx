@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import JSZip from 'jszip';
 import { 
@@ -7,8 +7,8 @@ import {
   FiAlertCircle,
   FiUpload,
   FiMaximize2,
-  FiX,
-  FiMinimize2
+  FiMinimize2,
+  FiChevronUp
 } from 'react-icons/fi';
 
 const TextFolderStructure = ({ 
@@ -22,7 +22,24 @@ const TextFolderStructure = ({
   const [currentError, setCurrentError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [isFullMode, setIsFullMode] = useState(false);
+  const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const fullscreenRef = useRef(null);
   const MAX_FILE_SIZE_MB = 50;
+
+  // Track scroll position in fullscreen mode
+  useEffect(() => {
+    const container = fullscreenRef.current;
+    if (!container || !isFullMode) return;
+
+    const handleScroll = () => {
+      setShowScrollToTop(container.scrollTop > 300);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [isFullMode]);
 
   const getSafeFilename = (name) => {
     if (!name) return 'folder-structure.txt';
@@ -242,7 +259,6 @@ const TextFolderStructure = ({
   const displayError = error || currentError;
   const itemCount = structure ? countItems(structure) : 0;
 
-  // Konten utama yang akan digunakan di normal mode dan full mode
   const renderContent = (isFullScreen = false) => (
     <div className={`space-y-4 ${isFullScreen ? 'h-full' : ''}`}>
       <div className="flex justify-between items-center">
@@ -252,23 +268,17 @@ const TextFolderStructure = ({
         <div className="flex gap-2">
           <button 
             onClick={() => setIsFullMode(!isFullScreen)}
-            className={`flex items-center text-sm px-3 py-1.5 rounded-md transition-colors ${
-              isFullScreen 
-                ? 'bg-gray-100 hover:bg-gray-200' 
-                : 'bg-gray-100 hover:bg-gray-200'
-            }`}
+            className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
           >
             {isFullScreen ? (
               <FiMinimize2 title='Exit Full Screen' size={14} />
             ) : (
               <FiMaximize2 title='Full Screen' size={14} />
             )}
-            {isFullScreen ? '' : ''}
           </button>
           <button 
             onClick={copyToClipboard}
             className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-            title="Copy to clipboard"
           >
             <FiCopy className="mr-1.5" size={14} />
             {copied ? 'Copied!' : 'Copy'}
@@ -276,7 +286,6 @@ const TextFolderStructure = ({
           <button 
             onClick={downloadAsTextFile}
             className="flex items-center text-sm px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md transition-colors"
-            title="Download as TXT"
           >
             <FiDownload className="mr-1.5" size={14} />
             Download
@@ -368,13 +377,27 @@ const TextFolderStructure = ({
 
           {/* Full Screen Mode */}
           {isFullMode && (
-            <div className="fixed inset-0 bg-white z-50 p-6 overflow-auto">
-              <div className="max-w-6xl mx-auto h-full flex flex-col">
+            <div 
+              ref={fullscreenRef}
+              className="fixed inset-0 bg-white z-50 p-6 overflow-auto"
+            >
+              <div className="max-w-6xl mx-auto min-h-full">
                 {renderContent(true)}
               </div>
             </div>
           )}
         </>
+      )}
+
+      {/* Scroll-to-Top Button */}
+      {isFullMode && showScrollToTop && (
+        <button
+          onClick={() => fullscreenRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-6 right-6 p-3 bg-rose-600 text-white rounded-full shadow-lg hover:bg-rose-700 transition-colors z-[9999]"
+          aria-label="Scroll to top"
+        >
+          <FiChevronUp size={20} />
+        </button>
       )}
     </div>
   );

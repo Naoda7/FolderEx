@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import JSZip from 'jszip';
 import { 
@@ -20,7 +20,8 @@ import {
   FiDownload,
   FiX,
   FiEye,
-  FiEyeOff
+  FiEyeOff,
+  FiChevronUp
 } from 'react-icons/fi';
 
 const PreviewFile = ({ file, onClose }) => {
@@ -177,7 +178,24 @@ const FolderStructure = ({
   const [currentError, setCurrentError] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
   const [isFullMode, setIsFullMode] = useState(false);
+  const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const fullscreenRef = useRef(null);
   const MAX_FILE_SIZE_MB = 50;
+
+  // Track scroll position in fullscreen mode
+  useEffect(() => {
+    const container = fullscreenRef.current;
+    if (!container || !isFullMode) return;
+
+    const handleScroll = () => {
+      setShowScrollToTop(container.scrollTop > 300);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [isFullMode]);
 
   const areAllFoldersExpanded = useCallback(() => {
     if (!structure) return false;
@@ -717,7 +735,7 @@ const FolderStructure = ({
   const displayError = error || currentError;
 
   return (
-    <div className="p-4 md:p-6 group">
+    <div className="p-4 md:p-6 group relative">
       <div
         onDragOver={handleDragOver}
         onDrop={handleDrop}
@@ -777,13 +795,27 @@ const FolderStructure = ({
 
           {/* Full Screen Mode */}
           {isFullMode && (
-            <div className="fixed inset-0 bg-white z-50 p-6 overflow-auto">
-              <div className="max-w-6xl mx-auto h-full flex flex-col">
+            <div 
+              ref={fullscreenRef}
+              className="fixed inset-0 bg-white z-50 p-6 overflow-auto"
+            >
+              <div className="max-w-6xl mx-auto min-h-full">
                 {renderContent(true)}
               </div>
             </div>
           )}
         </>
+      )}
+
+      {/* Scroll-to-Top Button */}
+      {isFullMode && showScrollToTop && (
+        <button
+          onClick={() => fullscreenRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-6 right-6 p-3 bg-rose-600 text-white rounded-full shadow-lg hover:bg-rose-700 transition-colors z-[9999]"
+          aria-label="Scroll to top"
+        >
+          <FiChevronUp size={20} />
+        </button>
       )}
 
       {previewFile && (
