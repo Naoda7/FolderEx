@@ -180,7 +180,7 @@ const FolderStructure = ({
   const [isFullMode, setIsFullMode] = useState(false);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const fullscreenRef = useRef(null);
-  const MAX_FILE_SIZE_MB = 50;
+  const MAX_FILE_SIZE_MB = 1000;
 
   // Track scroll position in fullscreen mode
   useEffect(() => {
