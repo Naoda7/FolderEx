@@ -7,6 +7,8 @@ import {
   FiFile, 
   FiChevronRight, 
   FiChevronDown,
+  FiChevronLeft,
+  FiChevronUp,
   FiUpload,
   FiAlertCircle,
   FiMaximize2,
@@ -21,7 +23,7 @@ import {
   FiX,
   FiEye,
   FiEyeOff,
-  FiChevronUp
+  FiSearch
 } from 'react-icons/fi';
 
 const PreviewFile = ({ file, onClose }) => {
@@ -179,10 +181,73 @@ const FolderStructure = ({
   const [previewFile, setPreviewFile] = useState(null);
   const [isFullMode, setIsFullMode] = useState(false);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [isSearching, setIsSearching] = useState(false);
   const fullscreenRef = useRef(null);
+  const itemRefs = useRef({});
   const MAX_FILE_SIZE_MB = 1000;
 
-  // Track scroll position in fullscreen mode
+  const handleSearch = useCallback((query) => {
+    if (!structure || !query.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const results = [];
+    const searchLower = query.toLowerCase();
+
+    const traverse = (node) => {
+      if (node.name.toLowerCase().includes(searchLower)) {
+        results.push(node.path);
+      }
+      if (node.children) {
+        node.children.forEach(traverse);
+      }
+    };
+
+    traverse(structure);
+    setSearchResults(results);
+    setIsSearching(false);
+  }, [structure]);
+
+  const navigateMatch = (direction) => {
+    if (searchResults.length === 0) return;
+    
+    let newIndex;
+    if (direction === 'prev') {
+      newIndex = (currentMatchIndex - 1 + searchResults.length) % searchResults.length;
+    } else {
+      newIndex = (currentMatchIndex + 1) % searchResults.length;
+    }
+    
+    setCurrentMatchIndex(newIndex);
+    const element = itemRefs.current[searchResults[newIndex]];
+    if (element) {
+      element.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+      
+      element.classList.add('bg-rose-100');
+      setTimeout(() => {
+        element.classList.remove('bg-rose-100');
+      }, 1000);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleSearch(searchQuery);
+      setCurrentMatchIndex(0);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, handleSearch]);
+
   useEffect(() => {
     const container = fullscreenRef.current;
     if (!container || !isFullMode) return;
@@ -453,6 +518,9 @@ const FolderStructure = ({
 
     setIsLoading(true);
     setCurrentError(null);
+    setSearchQuery('');
+    setSearchResults([]);
+    setCurrentMatchIndex(0);
     
     try {
       const item = e.dataTransfer.items[0];
@@ -569,10 +637,18 @@ const FolderStructure = ({
     const isExpanded = isFolder && expandedFolders.has(node.path);
     const hasChildren = isFolder && node.children?.length > 0;
     const isRoot = level === 0;
+    const isMatch = searchResults.includes(node.path);
+    const isActiveMatch = searchResults[currentMatchIndex] === node.path;
 
     if (isRoot) {
       return (
-        <div key={node.path} className="font-mono text-sm">
+        <div 
+          key={node.path}
+          ref={el => itemRefs.current[node.path] = el}
+          className={`relative font-mono text-sm ${isMatch ? 'border-l-4 border-rose-500 -ml-1 pl-1' : ''} ${
+            isActiveMatch ? 'ring-2 ring-rose-500' : ''
+          }`}
+        >
           <div 
             className={`flex items-center ${hasChildren ? 'cursor-pointer hover:bg-gray-100' : ''} p-1 rounded`}
             onClick={() => hasChildren && toggleFolder(node.path)}
@@ -588,6 +664,11 @@ const FolderStructure = ({
             )}
             <FiFolder className="mr-1.5 text-rose-600 flex-shrink-0" />
             <span className="font-medium truncate">{node.name}/</span>
+            {isMatch && (
+              <span className="ml-2 px-1.5 py-0.5 bg-rose-500 text-white text-xs rounded-md">
+                Match
+              </span>
+            )}
           </div>
           {hasChildren && isExpanded && (
             <div className="ml-6">
@@ -606,7 +687,13 @@ const FolderStructure = ({
     }
 
     return (
-      <div key={node.path} className="flex flex-col">
+      <div 
+        key={node.path}
+        ref={el => itemRefs.current[node.path] = el}
+        className={`relative flex flex-col ${isMatch ? 'border-l-4 border-rose-500 -ml-1 pl-1' : ''} ${
+          isActiveMatch ? 'ring-2 ring-rose-500' : ''
+        }`}
+      >
         <div className="flex items-center">
           <div className="flex">
             {parentPrefixes.map((showLine, i) => (
@@ -647,6 +734,11 @@ const FolderStructure = ({
               {node.name}
               {isFolder ? '/' : ''}
             </span>
+            {isMatch && (
+              <span className="ml-2 px-1.5 py-0.5 bg-rose-500 text-white text-xs rounded-md">
+                Match
+              </span>
+            )}
           </div>
         </div>
 
@@ -668,10 +760,26 @@ const FolderStructure = ({
 
   const renderContent = (isFullScreen = false) => (
     <div className={`space-y-4 ${isFullScreen ? 'h-full' : ''}`}>
-      <div className="flex justify-between items-center">
-        <h3 className="font-semibold text-gray-700">
-          Folder Structure: <span className="text-rose-600">{structure.name}</span>
-        </h3>
+      <div className="flex justify-between items-center gap-4">
+        <div className="flex-1 max-w-md">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search files/folders..."
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <div className="absolute left-3 top-2.5 text-gray-400">
+              <FiSearch className="h-5 w-5" />
+            </div>
+            {isSearching && (
+              <div className="absolute right-3 top-2.5">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-rose-500"></div>
+              </div>
+            )}
+          </div>
+        </div>
         <div className="flex gap-2">
           <button 
             onClick={() => setIsFullMode(!isFullScreen)}
@@ -710,11 +818,41 @@ const FolderStructure = ({
           </button>
         </div>
       </div>
+
+      {searchQuery && searchResults.length > 0 && (
+        <div className="mb-2 flex items-center justify-between text-sm text-gray-500">
+          <span>
+            Found {searchResults.length} matches for "{searchQuery}"
+          </span>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => navigateMatch('prev')}
+              className="flex items-center px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50"
+              disabled={searchResults.length <= 1}
+            >
+              <FiChevronLeft className="mr-1" size={14} />
+              Previous
+            </button>
+            <span className="px-2">
+              {currentMatchIndex + 1} of {searchResults.length}
+            </span>
+            <button
+              onClick={() => navigateMatch('next')}
+              className="flex items-center px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50"
+              disabled={searchResults.length <= 1}
+            >
+              Next
+              <FiChevronRight className="ml-1" size={14} />
+            </button>
+          </div>
+        </div>
+      )}
       
       <div className={`bg-gray-50/60 rounded-lg border border-gray-100 overflow-hidden ${
         isFullScreen ? 'flex-1 flex flex-col' : ''
       }`}>
         <div 
+          ref={isFullScreen ? fullscreenRef : null}
           className={`p-4 overflow-x-auto overflow-y-auto font-mono text-sm bg-gray-50/60 ${
             isFullScreen ? 'flex-1' : ''
           }`}
@@ -736,6 +874,17 @@ const FolderStructure = ({
 
   return (
     <div className="p-4 md:p-6 group relative">
+      <style>{`
+        @keyframes pulse-once {
+          0% { background-color: rgba(251, 113, 133, 0.2); }
+          50% { background-color: rgba(251, 113, 133, 0.5); }
+          100% { background-color: rgba(251, 113, 133, 0.2); }
+        }
+        .animate-pulse-once {
+          animation: pulse-once 1s ease-in-out;
+        }
+      `}</style>
+
       <div
         onDragOver={handleDragOver}
         onDrop={handleDrop}

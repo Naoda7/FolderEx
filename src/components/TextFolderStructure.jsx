@@ -8,7 +8,9 @@ import {
   FiUpload,
   FiMaximize2,
   FiMinimize2,
-  FiChevronUp
+  FiChevronUp,
+  FiEye,
+  FiEyeOff
 } from 'react-icons/fi';
 
 const TextFolderStructure = ({ 
@@ -23,10 +25,30 @@ const TextFolderStructure = ({
   const [copied, setCopied] = useState(false);
   const [isFullMode, setIsFullMode] = useState(false);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState(new Set());
   const fullscreenRef = useRef(null);
   const MAX_FILE_SIZE_MB = 1000;
 
-  // Track scroll position in fullscreen mode
+  const getAllFolderPaths = useCallback((node) => {
+    if (node.type !== 'directory') return [];
+    let paths = [node.path];
+    if (node.children) {
+      node.children.forEach(child => {
+        paths = [...paths, ...getAllFolderPaths(child)];
+      });
+    }
+    return paths;
+  }, []);
+
+  useEffect(() => {
+    if (structure) {
+      const allPaths = getAllFolderPaths(structure);
+      setExpandedFolders(new Set(allPaths));
+    } else {
+      setExpandedFolders(new Set());
+    }
+  }, [structure, getAllFolderPaths]);
+
   useEffect(() => {
     const container = fullscreenRef.current;
     if (!container || !isFullMode) return;
@@ -50,10 +72,117 @@ const TextFolderStructure = ({
     return cleanName ? `${cleanName}-structure.txt` : 'folder-structure.txt';
   };
 
+  const areAllFoldersExpanded = useCallback(() => {
+    if (!structure) return false;
+    const allPaths = getAllFolderPaths(structure);
+    return allPaths.length > 0 && allPaths.every(path => expandedFolders.has(path));
+  }, [structure, expandedFolders, getAllFolderPaths]);
+
+  const toggleExpandAll = () => {
+    if (!structure) return;
+    if (areAllFoldersExpanded()) {
+      setExpandedFolders(new Set());
+    } else {
+      const allPaths = getAllFolderPaths(structure);
+      setExpandedFolders(new Set(allPaths));
+    }
+  };
+
+  const toggleFolder = (path, e) => {
+    e.stopPropagation();
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  const generateTextStructure = (node, prefix = '', isLast = true, isRoot = true) => {
+    const isExpanded = expandedFolders.has(node.path);
+
+    if (isRoot) {
+      const rootLine = `${node.name}/`;
+      const childLines = isExpanded && node.children ? node.children.flatMap((child, i) => 
+        generateTextStructure(child, '', i === node.children.length - 1, false)
+      ) : [];
+      return [rootLine, ...childLines];
+    }
+
+    const connector = isLast ? '└── ' : '├── ';
+    const line = `${prefix}${connector}${node.name}${node.type === 'directory' ? '/' : ''}`;
+
+    if (node.type !== 'directory' || !node.children || node.children.length === 0 || !isExpanded) {
+      return [line];
+    }
+
+    const childPrefix = prefix + (isLast ? '    ' : '│   ');
+    const childLines = node.children.flatMap((child, i) => 
+      generateTextStructure(child, childPrefix, i === node.children.length - 1, false)
+    );
+
+    return [line, ...childLines];
+  };
+
+  const renderInteractiveStructure = (node, prefix = '', isLast = true, isRoot = true) => {
+    const isExpanded = expandedFolders.has(node.path);
+
+    if (isRoot) {
+      return (
+        <div key={node.path || 'root'} className="leading-relaxed">
+          <div 
+            onClick={(e) => toggleFolder(node.path, e)}
+            className="cursor-pointer hover:bg-gray-200/60 select-none inline-flex items-center rounded px-1 text-black font-semibold"
+          >
+            {node.name}/
+          </div>
+          {isExpanded && node.children && (
+            <div className="mt-0.5">
+              {node.children.map((child, i) => 
+                renderInteractiveStructure(child, '', i === node.children.length - 1, false)
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const connector = isLast ? '└── ' : '├── ';
+    const isDir = node.type === 'directory';
+
+    return (
+      <div key={node.path} className="leading-relaxed whitespace-nowrap">
+        <div 
+          onClick={isDir ? (e) => toggleFolder(node.path, e) : undefined}
+          className={`inline-flex items-center rounded px-1 transition-colors ${
+            isDir 
+              ? 'cursor-pointer hover:bg-gray-200/60 select-none text-black font-medium' 
+              : 'hover:bg-gray-100/50'
+          }`}
+          style={!isDir ? { color: '#333333' } : undefined}
+        >
+          <span className="text-gray-400 font-normal select-none tracking-wider opacity-85">{prefix}{connector}</span>
+          <span>{node.name}{isDir ? '/' : ''}</span>
+        </div>
+        {isDir && isExpanded && node.children && (
+          <div className="mt-0.5">
+            {node.children.map((child, i) => {
+              const childPrefix = prefix + (isLast ? '    ' : '│   ');
+              return renderInteractiveStructure(child, childPrefix, i === node.children.length - 1, false);
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const copyToClipboard = () => {
     if (!structure) return;
     
-    const textToCopy = renderStructure(structure).join('\n');
+    const textToCopy = generateTextStructure(structure).join('\n');
     navigator.clipboard.writeText(textToCopy)
       .then(() => {
         setCopied(true);
@@ -67,7 +196,7 @@ const TextFolderStructure = ({
   const downloadAsTextFile = () => {
     if (!structure) return;
     
-    const textContent = renderStructure(structure).join('\n');
+    const textContent = generateTextStructure(structure).join('\n');
     const blob = new Blob([textContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -227,30 +356,6 @@ const TextFolderStructure = ({
     }
   };
 
-  const renderStructure = (node, prefix = '', isLast = true, isRoot = true) => {
-    if (isRoot) {
-      const rootLine = `${node.name}/`;
-      const childLines = node.children.flatMap((child, i) => 
-        renderStructure(child, '    ', i === node.children.length - 1, false)
-      );
-      return [rootLine, ...childLines];
-    }
-
-    const connector = isLast ? '└── ' : '├── ';
-    const line = `${prefix}${connector}${node.name}${node.type === 'directory' ? '/' : ''}`;
-
-    if (node.type !== 'directory' || !node.children || node.children.length === 0) {
-      return [line];
-    }
-
-    const childPrefix = prefix + (isLast ? '    ' : '│   ');
-    const childLines = node.children.flatMap((child, i) => 
-      renderStructure(child, childPrefix, i === node.children.length - 1, false)
-    );
-
-    return [line, ...childLines];
-  };
-
   const countItems = useCallback((node) => {
     if (!node.children) return 1;
     return 1 + node.children.reduce((sum, child) => sum + countItems(child), 0);
@@ -277,6 +382,17 @@ const TextFolderStructure = ({
             )}
           </button>
           <button 
+            onClick={toggleExpandAll}
+            className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+          >
+            {areAllFoldersExpanded() ? (
+              <FiEyeOff className="mr-1.5" size={14} />
+            ) : (
+              <FiEye className="mr-1.5" size={14} />
+            )}
+            {areAllFoldersExpanded() ? 'Collapse All' : 'Expand All'}
+          </button>
+          <button 
             onClick={copyToClipboard}
             className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
           >
@@ -297,16 +413,16 @@ const TextFolderStructure = ({
         isFullScreen ? 'flex-1 flex flex-col' : ''
       }`}>
         <div 
-          className={`p-4 overflow-x-auto overflow-y-auto font-mono text-sm bg-gray-50/60 ${
+          className={`p-5 overflow-x-auto overflow-y-auto font-mono text-sm bg-gray-50/60 selection:bg-rose-100 ${
             isFullScreen ? 'flex-1' : ''
           }`}
           style={{ 
             maxHeight: isFullScreen ? 'none' : (typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight)
           }}
         >
-          <pre className="whitespace-pre">
-            {renderStructure(structure).join('\n')}
-          </pre>
+          <div className="text-left align-middle select-text">
+            {renderInteractiveStructure(structure)}
+          </div>
         </div>
         <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 border-t border-gray-200 flex justify-between">
           <span>{itemCount} items</span>
