@@ -171,7 +171,6 @@ const FolderStructure = ({
   error, 
   expandedFolders,
   setExpandedFolders,
-  isLoading,
   setIsLoading,
   onStructureUpdate,
   maxHeight = '35vh'
@@ -185,7 +184,12 @@ const FolderStructure = ({
   const [searchResults, setSearchResults] = useState([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
+  
+  // State khusus untuk proses upload di area drag & drop
+  const [isProcessingLocal, setIsProcessingLocal] = useState(false);
+  
   const fullscreenRef = useRef(null);
+  const fileInputRef = useRef(null);
   const itemRefs = useRef({});
   const MAX_FILE_SIZE_MB = 1000;
 
@@ -317,20 +321,19 @@ const FolderStructure = ({
   const downloadAsTextFile = useCallback(() => {
     if (!structure) return;
 
-    const renderStructureWithIcons = (node, prefix = '', isLast = true, isRoot = true) => {
+    const renderTextStructure = (node, prefix = '', isLast = true, isRoot = true) => {
       const isExpanded = expandedFolders.has(node.path);
       
       if (isRoot) {
-        const rootLine = `📁 ${node.name}/`;
+        const rootLine = `${node.name}/`;
         const childLines = isExpanded ? node.children.flatMap((child, i) => 
-          renderStructureWithIcons(child, '    ', i === node.children.length - 1, false)
+          renderTextStructure(child, '', i === node.children.length - 1, false)
         ) : [];
         return [rootLine, ...childLines];
       }
 
       const connector = isLast ? '└── ' : '├── ';
-      const icon = node.type === 'directory' ? (isExpanded ? '📂' : '📁') : '📄';
-      const line = `${prefix}${connector}${icon} ${node.name}${node.type === 'directory' ? '/' : ''}`;
+      const line = `${prefix}${connector}${node.name}${node.type === 'directory' ? '/' : ''}`;
 
       if (node.type !== 'directory' || !node.children || node.children.length === 0 || !isExpanded) {
         return [line];
@@ -338,15 +341,13 @@ const FolderStructure = ({
 
       const childPrefix = prefix + (isLast ? '    ' : '│   ');
       const childLines = node.children.flatMap((child, i) => 
-        renderStructureWithIcons(child, childPrefix, i === node.children.length - 1, false)
+        renderTextStructure(child, childPrefix, i === node.children.length - 1, false)
       );
 
       return [line, ...childLines];
     };
 
-    const structureWithIcons = renderStructureWithIcons(structure);
-    const textContent = structureWithIcons.join('\n');
-    
+    const textContent = renderTextStructure(structure).join('\n');
     const blob = new Blob([textContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -361,20 +362,19 @@ const FolderStructure = ({
   const copyVisualStructure = useCallback(() => {
     if (!structure) return;
 
-    const renderStructureWithIcons = (node, prefix = '', isLast = true, isRoot = true) => {
+    const renderTextStructure = (node, prefix = '', isLast = true, isRoot = true) => {
       const isExpanded = expandedFolders.has(node.path);
       
       if (isRoot) {
-        const rootLine = `📁 ${node.name}/`;
+        const rootLine = `${node.name}/`;
         const childLines = isExpanded ? node.children.flatMap((child, i) => 
-          renderStructureWithIcons(child, '    ', i === node.children.length - 1, false)
+          renderTextStructure(child, '', i === node.children.length - 1, false)
         ) : [];
         return [rootLine, ...childLines];
       }
 
       const connector = isLast ? '└── ' : '├── ';
-      const icon = node.type === 'directory' ? (isExpanded ? '📂' : '📁') : '📄';
-      const line = `${prefix}${connector}${icon} ${node.name}${node.type === 'directory' ? '/' : ''}`;
+      const line = `${prefix}${connector}${node.name}${node.type === 'directory' ? '/' : ''}`;
 
       if (node.type !== 'directory' || !node.children || node.children.length === 0 || !isExpanded) {
         return [line];
@@ -382,14 +382,14 @@ const FolderStructure = ({
 
       const childPrefix = prefix + (isLast ? '    ' : '│   ');
       const childLines = node.children.flatMap((child, i) => 
-        renderStructureWithIcons(child, childPrefix, i === node.children.length - 1, false)
+        renderTextStructure(child, childPrefix, i === node.children.length - 1, false)
       );
 
       return [line, ...childLines];
     };
 
-    const structureWithIcons = renderStructureWithIcons(structure);
-    navigator.clipboard.writeText(structureWithIcons.join('\n'))
+    const textContent = renderTextStructure(structure).join('\n');
+    navigator.clipboard.writeText(textContent)
       .then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -399,10 +399,9 @@ const FolderStructure = ({
       });
   }, [structure, expandedFolders]);
 
-  const handleDragOver = (e) => {
+  const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
   };
 
   const extractZipStructure = async (file) => {
@@ -507,6 +506,110 @@ const FolderStructure = ({
     return dirStructure;
   };
 
+  const buildStructureFromFiles = (files) => {
+    if (!files.length) return null;
+    
+    const firstPath = files[0].webkitRelativePath;
+    const rootName = firstPath ? firstPath.split('/')[0] : 'Root';
+    
+    const root = {
+      name: rootName,
+      type: 'directory',
+      path: rootName,
+      children: []
+    };
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const pathStr = file.webkitRelativePath || file.name;
+      const parts = pathStr.split('/');
+      let current = root;
+
+      const startIndex = parts.length > 1 ? 1 : 0;
+
+      for (let j = startIndex; j < parts.length; j++) {
+        const part = parts[j];
+        const isLast = j === parts.length - 1;
+        const path = parts.slice(0, j + 1).join('/');
+
+        let existing = current.children.find(c => c.name === part);
+
+        if (isLast) {
+          if (!existing) {
+            current.children.push({
+              name: part,
+              type: 'file',
+              path: path,
+              fileObject: file
+            });
+          }
+        } else {
+          if (!existing) {
+            existing = {
+              name: part,
+              type: 'directory',
+              path: path,
+              children: []
+            };
+            current.children.push(existing);
+          }
+          current = existing;
+        }
+      }
+    }
+
+    const sortStructure = (node) => {
+      node.children?.sort((a, b) => {
+        if (a.type === b.type) return a.name.localeCompare(b.name);
+        return a.type === 'directory' ? -1 : 1;
+      });
+      node.children?.forEach(sortStructure);
+    };
+    
+    sortStructure(root);
+    return root;
+  };
+
+  const handleFileInput = (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    if (typeof onStructureUpdate !== 'function') {
+      console.error('onStructureUpdate is not a function');
+      return;
+    }
+
+    setIsProcessingLocal(true);
+    setCurrentError(null);
+    setSearchQuery('');
+    setSearchResults([]);
+    setCurrentMatchIndex(0);
+
+    setTimeout(async () => {
+      try {
+        if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
+          const structure = await extractZipStructure(files[0]);
+          const allPaths = getAllFolderPaths(structure);
+          setExpandedFolders(new Set(allPaths));
+          onStructureUpdate(structure, null);
+        } else {
+          const structure = buildStructureFromFiles(files);
+          if (!structure) throw new Error('Selected folder is empty or invalid.');
+          const allPaths = getAllFolderPaths(structure);
+          setExpandedFolders(new Set(allPaths));
+          onStructureUpdate(structure, null);
+        }
+      } catch (err) {
+        console.error('File reading failed:', err);
+        setCurrentError(err.message);
+        onStructureUpdate(null, err.message);
+      } finally {
+        setIsProcessingLocal(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    }, 50);
+  };
+
   const handleDrop = async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -516,7 +619,7 @@ const FolderStructure = ({
       return;
     }
 
-    setIsLoading(true);
+    setIsProcessingLocal(true);
     setCurrentError(null);
     setSearchQuery('');
     setSearchResults([]);
@@ -554,7 +657,7 @@ const FolderStructure = ({
       setCurrentError(err.message);
       onStructureUpdate(null, err.message);
     } finally {
-      setIsLoading(false);
+      setIsProcessingLocal(false);
     }
   };
 
@@ -581,6 +684,8 @@ const FolderStructure = ({
     if (node.type !== 'file') return;
     
     try {
+      // setIsLoading ini adalah props dari parent yang akan memicu loading popup
+      // dan hanya dijalankan ketika pengguna ingin melihat isi file yang sudah muncul.
       setIsLoading(true);
       
       if (node.zipEntry && structure.fileMap) {
@@ -620,6 +725,13 @@ const FolderStructure = ({
         }
         
         setPreviewFile(file);
+        return;
+      }
+      else if (node.fileObject) {
+        if (node.fileObject.size > 5 * 1024 * 1024) {
+          throw new Error('File too large for preview (max 5MB)');
+        }
+        setPreviewFile(node.fileObject);
         return;
       }
       
@@ -884,20 +996,33 @@ const FolderStructure = ({
           animation: pulse-once 1s ease-in-out;
         }
       `}</style>
+      
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileInput}
+        className="hidden"
+        webkitdirectory="true"
+        directory="true"
+        multiple
+      />
 
       <div
-        onDragOver={handleDragOver}
+        onClick={() => fileInputRef.current?.click()}
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
         onDrop={handleDrop}
         className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${
-          isLoading 
+          isProcessingLocal 
             ? 'border-rose-400 bg-gray-50/60' 
             : displayError 
               ? 'border-red-400 bg-red-50' 
               : 'border-gray-300 bg-gray-50/60 hover:border-rose-400 cursor-pointer'
         }`}
       >
-        <div className="flex flex-col items-center justify-center space-y-3">
-          {isLoading ? (
+        <div className="flex flex-col items-center justify-center space-y-3 pointer-events-none">
+          {isProcessingLocal ? (
             <>
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-rose-500"></div>
               <p className="text-rose-600 font-medium">Processing files...</p>
@@ -911,7 +1036,7 @@ const FolderStructure = ({
               }`} />
               <div>
                 <p className="text-lg font-medium text-gray-700">
-                  Drag and drop a folder or ZIP file
+                  Click to browse folder or Drag & Drop
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
                   Supported formats: folder, .zip (max {MAX_FILE_SIZE_MB}MB)
@@ -935,14 +1060,11 @@ const FolderStructure = ({
         </div>
       )}
 
-      {structure && !isLoading && (
+      {structure && !isProcessingLocal && (
         <>
-          {/* Normal Mode */}
           <div className={isFullMode ? 'hidden' : ''}>
             {renderContent(false)}
           </div>
-
-          {/* Full Screen Mode */}
           {isFullMode && (
             <div 
               ref={fullscreenRef}
@@ -956,7 +1078,6 @@ const FolderStructure = ({
         </>
       )}
 
-      {/* Scroll-to-Top Button */}
       {isFullMode && showScrollToTop && (
         <button
           onClick={() => fullscreenRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -970,10 +1091,7 @@ const FolderStructure = ({
       {previewFile && (
         <PreviewFile 
           file={previewFile}
-          onClose={() => {
-            setPreviewFile(null);
-            setIsLoading(false);
-          }}
+          onClose={() => setPreviewFile(null)}
         />
       )}
     </div>

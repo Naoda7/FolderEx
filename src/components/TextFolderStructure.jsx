@@ -17,8 +17,6 @@ const TextFolderStructure = ({
   structure, 
   error, 
   onStructureUpdate,
-  isLoading,
-  setIsLoading,
   maxHeight = '35vh'
 }) => {
   const [currentError, setCurrentError] = useState(null);
@@ -26,7 +24,11 @@ const TextFolderStructure = ({
   const [isFullMode, setIsFullMode] = useState(false);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
+  
+  const [isProcessingLocal, setIsProcessingLocal] = useState(false);
+  
   const fullscreenRef = useRef(null);
+  const fileInputRef = useRef(null);
   const MAX_FILE_SIZE_MB = 1000;
 
   const getAllFolderPaths = useCallback((node) => {
@@ -135,7 +137,7 @@ const TextFolderStructure = ({
         <div key={node.path || 'root'} className="leading-relaxed">
           <div 
             onClick={(e) => toggleFolder(node.path, e)}
-            className="cursor-pointer hover:bg-gray-200/60 select-none inline-flex items-center rounded px-1 text-black font-semibold"
+            className="cursor-pointer hover:bg-gray-200/60 select-none inline-flex items-center rounded px-1 text-black font-bold"
           >
             {node.name}/
           </div>
@@ -159,8 +161,8 @@ const TextFolderStructure = ({
           onClick={isDir ? (e) => toggleFolder(node.path, e) : undefined}
           className={`inline-flex items-center rounded px-1 transition-colors ${
             isDir 
-              ? 'cursor-pointer hover:bg-gray-200/60 select-none text-black font-medium' 
-              : 'hover:bg-gray-100/50'
+              ? 'cursor-pointer hover:bg-gray-200/60 select-none text-black font-semibold' 
+              : 'hover:bg-gray-100/50 font-normal'
           }`}
           style={!isDir ? { color: '#333333' } : undefined}
         >
@@ -208,10 +210,9 @@ const TextFolderStructure = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleDragOver = (e) => {
+  const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
   };
 
   const extractZipStructure = async (file) => {
@@ -316,20 +317,129 @@ const TextFolderStructure = ({
     return dirStructure;
   };
 
+  const buildStructureFromFiles = (files) => {
+    if (!files.length) return null;
+    
+    const firstPath = files[0].webkitRelativePath;
+    const rootName = firstPath ? firstPath.split('/')[0] : 'Root';
+    
+    const root = {
+      name: rootName,
+      type: 'directory',
+      path: rootName,
+      children: []
+    };
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const pathStr = file.webkitRelativePath || file.name;
+      const parts = pathStr.split('/');
+      let current = root;
+
+      const startIndex = parts.length > 1 ? 1 : 0;
+
+      for (let j = startIndex; j < parts.length; j++) {
+        const part = parts[j];
+        const isLast = j === parts.length - 1;
+        const path = parts.slice(0, j + 1).join('/');
+
+        let existing = current.children.find(c => c.name === part);
+
+        if (isLast) {
+          if (!existing) {
+            current.children.push({
+              name: part,
+              type: 'file',
+              path: path,
+              fileObject: file
+            });
+          }
+        } else {
+          if (!existing) {
+            existing = {
+              name: part,
+              type: 'directory',
+              path: path,
+              children: []
+            };
+            current.children.push(existing);
+          }
+          current = existing;
+        }
+      }
+    }
+
+    const sortStructure = (node) => {
+      node.children?.sort((a, b) => {
+        if (a.type === b.type) return a.name.localeCompare(b.name);
+        return a.type === 'directory' ? -1 : 1;
+      });
+      node.children?.forEach(sortStructure);
+    };
+    
+    sortStructure(root);
+    return root;
+  };
+
+  const handleFileInput = (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    if (typeof onStructureUpdate !== 'function') {
+      console.error('onStructureUpdate is not a function');
+      return;
+    }
+
+    setIsProcessingLocal(true);
+    setCurrentError(null);
+
+    setTimeout(async () => {
+      try {
+        if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
+          const structure = await extractZipStructure(files[0]);
+          const allPaths = getAllFolderPaths(structure);
+          setExpandedFolders(new Set(allPaths));
+          onStructureUpdate(structure, null);
+        } else {
+          const structure = buildStructureFromFiles(files);
+          if (!structure) throw new Error('Selected folder is empty or invalid.');
+          const allPaths = getAllFolderPaths(structure);
+          setExpandedFolders(new Set(allPaths));
+          onStructureUpdate(structure, null);
+        }
+      } catch (err) {
+        console.error('File reading failed:', err);
+        setCurrentError(err.message);
+        onStructureUpdate(null, err.message);
+      } finally {
+        setIsProcessingLocal(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    }, 50);
+  };
+
   const handleDrop = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     
-    setIsLoading(true);
+    if (typeof onStructureUpdate !== 'function') {
+      console.error('onStructureUpdate is not a function');
+      return;
+    }
+
+    setIsProcessingLocal(true);
     setCurrentError(null);
-    onStructureUpdate(null, null);
     
     try {
       const item = e.dataTransfer.items[0];
       if (!item) throw new Error('No files were dropped');
 
-      if (item.webkitGetAsEntry?.().isDirectory) {
-        const structure = await readDirectoryStructure(item.webkitGetAsEntry());
+      const entry = item.webkitGetAsEntry?.();
+
+      if (entry?.isDirectory) {
+        const structure = await readDirectoryStructure(entry);
+        const allPaths = getAllFolderPaths(structure);
+        setExpandedFolders(new Set(allPaths));
         onStructureUpdate(structure, null);
         return;
       }
@@ -339,6 +449,8 @@ const TextFolderStructure = ({
         
         if (/\.zip$/i.test(file.name)) {
           const structure = await extractZipStructure(file);
+          const allPaths = getAllFolderPaths(structure);
+          setExpandedFolders(new Set(allPaths));
           onStructureUpdate(structure, null);
           return;
         }
@@ -352,7 +464,7 @@ const TextFolderStructure = ({
       setCurrentError(err.message);
       onStructureUpdate(null, err.message);
     } finally {
-      setIsLoading(false);
+      setIsProcessingLocal(false);
     }
   };
 
@@ -375,21 +487,13 @@ const TextFolderStructure = ({
             onClick={() => setIsFullMode(!isFullScreen)}
             className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
           >
-            {isFullScreen ? (
-              <FiMinimize2 title='Exit Full Screen' size={14} />
-            ) : (
-              <FiMaximize2 title='Full Screen' size={14} />
-            )}
+            {isFullScreen ? <FiMinimize2 title='Exit Full Screen' size={14} /> : <FiMaximize2 title='Full Screen' size={14} />}
           </button>
           <button 
             onClick={toggleExpandAll}
             className="flex items-center text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
           >
-            {areAllFoldersExpanded() ? (
-              <FiEyeOff className="mr-1.5" size={14} />
-            ) : (
-              <FiEye className="mr-1.5" size={14} />
-            )}
+            {areAllFoldersExpanded() ? <FiEyeOff className="mr-1.5" size={14} /> : <FiEye className="mr-1.5" size={14} />}
             {areAllFoldersExpanded() ? 'Collapse All' : 'Expand All'}
           </button>
           <button 
@@ -434,19 +538,32 @@ const TextFolderStructure = ({
 
   return (
     <div className="p-4 md:p-6 group relative">
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileInput}
+        className="hidden"
+        webkitdirectory="true"
+        directory="true"
+        multiple
+      />
+      
       <div
-        onDragOver={handleDragOver}
+        onClick={() => fileInputRef.current?.click()}
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
         onDrop={handleDrop}
         className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${
-          isLoading 
+          isProcessingLocal 
             ? 'border-rose-400 bg-gray-50/60' 
             : displayError
               ? 'border-red-400 bg-red-50' 
               : 'border-gray-300 bg-gray-50/60 hover:border-rose-400 cursor-pointer'
         }`}
       >
-        <div className="flex flex-col items-center justify-center space-y-3">
-          {isLoading ? (
+        <div className="flex flex-col items-center justify-center space-y-3 pointer-events-none">
+          {isProcessingLocal ? (
             <>
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-rose-500"></div>
               <p className="text-rose-600 font-medium">Processing files...</p>
@@ -454,13 +571,11 @@ const TextFolderStructure = ({
           ) : (
             <>
               <FiUpload className={`w-10 h-10 transition-colors ${
-                displayError 
-                  ? 'text-red-400' 
-                  : 'text-gray-400 group-hover:text-rose-400'
+                displayError ? 'text-red-400' : 'text-gray-400 group-hover:text-rose-400'
               }`} />
               <div>
                 <p className="text-lg font-medium text-gray-700">
-                  Drag and drop a folder or ZIP file
+                  Click to browse folder or Drag & Drop
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
                   Supported formats: folder, .zip (max {MAX_FILE_SIZE_MB}MB)
@@ -484,14 +599,11 @@ const TextFolderStructure = ({
         </div>
       )}
 
-      {structure && !isLoading && (
+      {structure && !isProcessingLocal && (
         <>
-          {/* Normal Mode */}
           <div className={isFullMode ? 'hidden' : ''}>
             {renderContent(false)}
           </div>
-
-          {/* Full Screen Mode */}
           {isFullMode && (
             <div 
               ref={fullscreenRef}
@@ -505,7 +617,6 @@ const TextFolderStructure = ({
         </>
       )}
 
-      {/* Scroll-to-Top Button */}
       {isFullMode && showScrollToTop && (
         <button
           onClick={() => fullscreenRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}

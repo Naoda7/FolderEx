@@ -3,23 +3,19 @@ import FolderStructure from './components/FolderStructure';
 import TextFolderStructure from './components/TextFolderStructure';
 
 function App() {
-  // View mode state (persisted in localStorage)
   const [viewMode, setViewMode] = useState(() => {
     return localStorage.getItem('folderViewMode') || 'text';
   });
 
-  // Shared state between both components
   const [structure, setStructure] = useState(null);
   const [error, setError] = useState(null);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [isLoading, setIsLoading] = useState(false);
 
-  // Persist view mode preference
   useEffect(() => {
     localStorage.setItem('folderViewMode', viewMode);
   }, [viewMode]);
 
-  // Reset view mode when window closes (optional)
   useEffect(() => {
     const handleBeforeUnload = () => {
       localStorage.setItem('folderViewMode', 'text');
@@ -28,7 +24,6 @@ function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
-  // Shared structure update handler
   const handleStructureUpdate = (newStructure, errorMsg = null) => {
     setStructure(newStructure);
     setError(errorMsg);
@@ -40,7 +35,6 @@ function App() {
     }
   };
 
-  // Helper function to get all folder paths
   const getAllFolderPaths = (node) => {
     if (node.type !== 'directory') return [];
     let paths = [node.path];
@@ -64,7 +58,6 @@ function App() {
           </p>
         </div>
 
-        {/* View mode toggle */}
         <div className="flex justify-center mb-8">
           <button 
             onClick={() => setViewMode('text')}
@@ -88,7 +81,6 @@ function App() {
           </button>
         </div>
 
-        {/* Main content area */}
         <div className="bg-white rounded-xl shadow-md shadow-gray-200/40 border-2 border-gray-400/10 overflow-hidden w-full transition-all duration-200">
           {viewMode === 'text' ? (
             <TextFolderStructure 
@@ -111,7 +103,6 @@ function App() {
           )}
         </div>
 
-        {/* Global error display */}
         {error && !isLoading && (
           <div className="mt-6 bg-red-50 border-l-4 border-red-400 text-red-700 p-4 rounded">
             <p className="font-medium">Error:</p>
@@ -119,15 +110,12 @@ function App() {
           </div>
         )}
 
-        {/* Loading overlay */}
         {isLoading && (
-          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-xl text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 mx-auto mb-4"></div>
-              <p className="text-lg font-medium text-gray-800">
-                {viewMode === 'text' 
-                  ? 'Processing folder structure...' 
-                  : 'Building visual hierarchy...'}
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-xl shadow-2xl text-center flex flex-col items-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-rose-600 mb-3"></div>
+              <p className="text-base font-semibold text-gray-800">
+                Processing files...
               </p>
             </div>
           </div>
