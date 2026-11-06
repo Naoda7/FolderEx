@@ -26,6 +26,8 @@ import {
   FiSearch
 } from 'react-icons/fi';
 
+const HEAVY_FOLDERS = ['node_modules', '.git', 'dist', 'build', 'coverage', '.next', '.nuxt'];
+
 const PreviewFile = ({ file, onClose }) => {
   const [content, setContent] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -184,9 +186,9 @@ const FolderStructure = ({
   const [searchResults, setSearchResults] = useState([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
-  
-  // State khusus untuk proses upload di area drag & drop
   const [isProcessingLocal, setIsProcessingLocal] = useState(false);
+  const [heavyFolderPrompt, setHeavyFolderPrompt] = useState(null);
+  const [excludedSelection, setExcludedSelection] = useState(new Set());
   
   const fullscreenRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -404,7 +406,34 @@ const FolderStructure = ({
     e.stopPropagation();
   };
 
-  const extractZipStructure = async (file) => {
+  const promptHeavyFolder = (detectedNames) => {
+    setExcludedSelection(new Set(detectedNames));
+    return new Promise((resolve) => {
+      setHeavyFolderPrompt({ resolve, detectedFolders: detectedNames });
+    });
+  };
+
+  const getEntries = (reader) => new Promise(resolve => reader.readEntries(resolve, () => resolve([])));
+
+  const scanForHeavyFolders = async (entry, detected = new Set()) => {
+    if (entry.isDirectory) {
+      if (HEAVY_FOLDERS.includes(entry.name)) {
+        detected.add(entry.name);
+        return detected; 
+      }
+      const reader = entry.createReader();
+      let entries = await getEntries(reader);
+      while (entries.length > 0) {
+        for (const child of entries) {
+          await scanForHeavyFolders(child, detected);
+        }
+        entries = await getEntries(reader);
+      }
+    }
+    return detected;
+  };
+
+  const extractZipStructure = async (file, askPrompt) => {
     try {
       if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
         throw new Error(`File exceeds ${MAX_FILE_SIZE_MB}MB limit`);
@@ -412,6 +441,20 @@ const FolderStructure = ({
 
       const zip = new JSZip();
       const content = await zip.loadAsync(file);
+      
+      let excludedNames = new Set();
+      if (askPrompt) {
+        const detected = new Set();
+        Object.keys(content.files).forEach(path => {
+          path.split('/').forEach(part => {
+            if (HEAVY_FOLDERS.includes(part)) detected.add(part);
+          });
+        });
+        if (detected.size > 0) {
+          excludedNames = await askPrompt(Array.from(detected));
+        }
+      }
+
       const root = {
         name: file.name.replace(/\.zip$/i, ''),
         type: 'directory',
@@ -421,6 +464,8 @@ const FolderStructure = ({
       };
 
       Object.keys(content.files).forEach(relativePath => {
+        if (relativePath.split('/').some(part => excludedNames.has(part))) return;
+
         const zipEntry = content.files[relativePath];
         const parts = relativePath.split('/').filter(part => part.length > 0);
         let current = root;
@@ -470,8 +515,9 @@ const FolderStructure = ({
     }
   };
 
-  const readDirectoryStructure = async (entry, currentPath = '') => {
-    const reader = entry.createReader();
+  const readDirectoryStructure = async (entry, currentPath = '', excludedNames = new Set()) => {
+    if (excludedNames.has(entry.name)) return null;
+
     const path = currentPath ? `${currentPath}/${entry.name}` : entry.name;
     const dirStructure = {
       name: entry.name,
@@ -480,22 +526,25 @@ const FolderStructure = ({
       children: []
     };
 
-    const entries = await new Promise((resolve) => {
-      reader.readEntries(resolve, () => resolve([]));
-    });
-
-    for (const item of entries) {
-      if (item.isDirectory) {
-        const subDir = await readDirectoryStructure(item, path);
-        dirStructure.children.push(subDir);
-      } else {
-        dirStructure.children.push({
-          name: item.name,
-          type: 'file',
-          path: `${path}/${item.name}`,
-          fileEntry: item
-        });
+    const reader = entry.createReader();
+    let entries = await getEntries(reader);
+    while (entries.length > 0) {
+      for (const item of entries) {
+        if (excludedNames.has(item.name)) continue;
+        
+        if (item.isDirectory) {
+          const subDir = await readDirectoryStructure(item, path, excludedNames);
+          if (subDir) dirStructure.children.push(subDir);
+        } else {
+          dirStructure.children.push({
+            name: item.name,
+            type: 'file',
+            path: `${path}/${item.name}`,
+            fileEntry: item
+          });
+        }
       }
+      entries = await getEntries(reader);
     }
 
     dirStructure.children.sort((a, b) => {
@@ -506,7 +555,7 @@ const FolderStructure = ({
     return dirStructure;
   };
 
-  const buildStructureFromFiles = (files) => {
+  const buildStructureFromFiles = (files, excludedNames = new Set()) => {
     if (!files.length) return null;
     
     const firstPath = files[0].webkitRelativePath;
@@ -522,16 +571,19 @@ const FolderStructure = ({
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const pathStr = file.webkitRelativePath || file.name;
+      
+      if (pathStr.split('/').some(part => excludedNames.has(part))) {
+        continue;
+      }
+
       const parts = pathStr.split('/');
       let current = root;
-
       const startIndex = parts.length > 1 ? 1 : 0;
 
       for (let j = startIndex; j < parts.length; j++) {
         const part = parts[j];
         const isLast = j === parts.length - 1;
         const path = parts.slice(0, j + 1).join('/');
-
         let existing = current.children.find(c => c.name === part);
 
         if (isLast) {
@@ -588,13 +640,28 @@ const FolderStructure = ({
     setTimeout(async () => {
       try {
         if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
-          const structure = await extractZipStructure(files[0]);
+          const structure = await extractZipStructure(files[0], promptHeavyFolder);
           const allPaths = getAllFolderPaths(structure);
           setExpandedFolders(new Set(allPaths));
           onStructureUpdate(structure, null);
         } else {
-          const structure = buildStructureFromFiles(files);
-          if (!structure) throw new Error('Selected folder is empty or invalid.');
+          let excludedNames = new Set();
+          const detected = new Set();
+          Array.from(files).forEach(f => {
+            const pathStr = f.webkitRelativePath || f.name;
+            pathStr.split('/').forEach(part => {
+              if (HEAVY_FOLDERS.includes(part)) detected.add(part);
+            });
+          });
+
+          if (detected.size > 0) {
+            excludedNames = await promptHeavyFolder(Array.from(detected));
+          }
+
+          const structure = buildStructureFromFiles(files, excludedNames);
+          if (!structure || structure.children.length === 0) {
+            throw new Error('Folder kosong atau semua file telah dikecualikan.');
+          }
           const allPaths = getAllFolderPaths(structure);
           setExpandedFolders(new Set(allPaths));
           onStructureUpdate(structure, null);
@@ -627,10 +694,20 @@ const FolderStructure = ({
     
     try {
       const item = e.dataTransfer.items[0];
-      if (!item) throw new Error('No files were dropped');
+      if (!item) throw new Error('Tidak ada file yang dimasukkan');
 
       if (item.webkitGetAsEntry?.().isDirectory) {
-        const structure = await readDirectoryStructure(item.webkitGetAsEntry());
+        const entry = item.webkitGetAsEntry();
+        const detected = await scanForHeavyFolders(entry);
+        let excludedNames = new Set();
+        if (detected.size > 0) {
+          excludedNames = await promptHeavyFolder(Array.from(detected));
+        }
+
+        const structure = await readDirectoryStructure(entry, '', excludedNames);
+        if (!structure || structure.children.length === 0) {
+          throw new Error('Folder kosong atau semua file telah dikecualikan.');
+        }
         const allPaths = getAllFolderPaths(structure);
         setExpandedFolders(new Set(allPaths));
         onStructureUpdate(structure, null);
@@ -641,17 +718,17 @@ const FolderStructure = ({
         const file = item.getAsFile();
         
         if (/\.zip$/i.test(file.name)) {
-          const structure = await extractZipStructure(file);
+          const structure = await extractZipStructure(file, promptHeavyFolder);
           const allPaths = getAllFolderPaths(structure);
           setExpandedFolders(new Set(allPaths));
           onStructureUpdate(structure, null);
           return;
         }
 
-        throw new Error('Only folders and ZIP files are supported');
+        throw new Error('Hanya folder dan file ZIP yang didukung');
       }
 
-      throw new Error('Unsupported item type');
+      throw new Error('Format file tidak didukung');
     } catch (err) {
       console.error('Drop processing failed:', err);
       setCurrentError(err.message);
@@ -684,8 +761,6 @@ const FolderStructure = ({
     if (node.type !== 'file') return;
     
     try {
-      // setIsLoading ini adalah props dari parent yang akan memicu loading popup
-      // dan hanya dijalankan ketika pengguna ingin melihat isi file yang sudah muncul.
       setIsLoading(true);
       
       if (node.zipEntry && structure.fileMap) {
@@ -1093,6 +1168,61 @@ const FolderStructure = ({
           file={previewFile}
           onClose={() => setPreviewFile(null)}
         />
+      )}
+
+      {heavyFolderPrompt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="p-5 border-b flex items-center gap-3">
+              <div className="p-2 bg-yellow-100 text-yellow-600 rounded-full">
+                <FiAlertCircle size={24} />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800">Folder Berat Terdeteksi</h3>
+            </div>
+            <div className="p-5 text-gray-600">
+              <p>Terdeteksi folder yang biasanya berisi sangat banyak file. Menampilkan semua folder ini dapat membuat proses menjadi sangat lambat.</p>
+              <p className="mt-3 text-sm font-medium text-gray-800 mb-2">Pilih folder yang ingin dikecualikan (dihilangkan):</p>
+              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-gray-50 p-1 space-y-1">
+                {heavyFolderPrompt.detectedFolders.map(name => (
+                  <label key={name} className="flex items-center space-x-3 p-2 hover:bg-gray-200 rounded cursor-pointer border border-transparent transition-colors">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 text-rose-600 rounded border-gray-300 focus:ring-rose-500"
+                      checked={excludedSelection.has(name)}
+                      onChange={(e) => {
+                        const next = new Set(excludedSelection);
+                        if (e.target.checked) next.add(name);
+                        else next.delete(name);
+                        setExcludedSelection(next);
+                      }}
+                    />
+                    <span className="font-mono text-sm text-gray-700">{name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="p-4 bg-gray-50 border-t flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  heavyFolderPrompt.resolve(new Set());
+                  setHeavyFolderPrompt(null);
+                }}
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-100 transition-colors font-medium text-sm"
+              >
+                Tampilkan Semua
+              </button>
+              <button
+                onClick={() => {
+                  heavyFolderPrompt.resolve(excludedSelection);
+                  setHeavyFolderPrompt(null);
+                }}
+                className="px-4 py-2 bg-rose-600 text-white rounded hover:bg-rose-700 transition-colors font-medium text-sm"
+              >
+                Hilangkan yang Dipilih
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
